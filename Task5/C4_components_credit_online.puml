@@ -1,0 +1,56 @@
+@startuml C4_Components_Credit_Online
+!include <C4/C4_Container>
+
+title C4 L2. Компоненты — заявка на кредит онлайн (детализация сервиса кредитных заявок и кредитного конвейера)
+
+Person(newClient, "Потенциальный клиент (сайт)")
+Person(client, "Клиент (интернет-банк)")
+Person(branchMgr, "Менеджер отделения")
+Person(creditBack, "Менеджер бэк-офиса кредитов")
+
+System(site, "Сайт банка", "PHP + React")
+System(ib, "Интернет-банк", "ASP.NET MVC: страница кредитов (доработка без ядра)")
+
+System_Boundary(cla, "Сервис кредитных заявок (новый)") {
+  Container(claApi, " API онлайн-заявок", "Java Spring Boot, REST", "Каталог условий, предодобренные предложения, приём заявок, СМС-коды, статусы; TLS")
+  Container(claSms, "Модуль СМС-уведомлений", "Java Spring Boot", "Коды подтверждения, уведомления о смене статуса; единая точка клиентских СМС")
+  Container(claStatus, "Приём событий статусов", "Java Spring Boot, callback (webhook)", "Получение изменений статуса заявки от конвейера")
+  ContainerDb(claDb, "БД сервиса", "Oracle, отдельная схема", "СМС-коды (TTL), журнал уведомлений, кэш каталога")
+}
+
+System_Boundary(conv, "Кредитный конвейер (Camunda + Oracle)") {
+  Container(convApi, "REST API конвейера (новый)", "Java", "Приём онлайн-заявок, выдача каталога и предодобрений, события статусов")
+  Container(convPrio, "Модуль предодобренных предложений (новый)", "Java, job", "Формирование предложений из уже выполненных скорингов и платёжной дисциплины; без предрасчётов в скоринге")
+  Container(convBpm, "BPM-процессы обработки", "Camunda, Java-обработчики", "Существующие процессы + онлайн-маршрут: авто-решение по БКИ для новых клиентов, повторный упрощённый скоринг, приоритет предодобренных")
+  ContainerDb(convDb, "БД конвейера", "Oracle", "Заявки, оценки скорингов, привязка платежей к договорам")
+}
+
+System(scoring, "Система кредитного скоринга", "Python, REST (Flask) + ML — без изменений")
+System(bki, "Бюро кредитных историй", "внешняя, REST")
+System(abs, "АБС", "Delphi + Oracle")
+System(smsgw, "СМС-шлюз телеком-оператора")
+
+Rel(newClient, site, "Заявка (телефон, Ф. И. О., паспорт — опционально)")
+Rel(client, ib, "Заявка, СМС-код")
+Rel(site, claApi, "REST/TLS")
+Rel(ib, claApi, "REST/TLS")
+Rel(claApi, claDb, "SQL")
+Rel(claApi, claSms, "Отправка кодов/уведомлений")
+Rel(claSms, smsgw, "СМС")
+Rel(smsgw, client, "СМС клиенту")
+Rel(claApi, convApi, "REST/TLS: заявки, каталог, предодобрения, статусы")
+Rel(convApi, convPrio, "Чтение предодобрений")
+Rel(convApi, convBpm, "Создание онлайн-заявок, события")
+Rel(convPrio, convDb, "Чтение выполненных скорингов, запись предложений")
+Rel(convBpm, convDb, "SQL")
+Rel(convBpm, scoring, "REST: скоринг онлайн (упрощённый — для предодобренных)")
+Rel(scoring, bki, "REST: кредитная история")
+Rel(convBpm, claStatus, "Callback: смена статуса заявки")
+Rel(claStatus, claSms, "Уведомление клиента")
+Rel(creditBack, convBpm, "Рассмотрение и решение (в тот же день — по предодобренным)")
+Rel(branchMgr, abs, "Заявки, продолжение онлайн-заявки")
+Rel(abs, convApi, "REST: поиск заявки клиента (продолжение в отделении)")
+Rel(abs, convDb, "Существующий обмен раз в сутки по БД (обе стороны)")
+
+SHOW_LEGEND()
+@enduml
