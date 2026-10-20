@@ -1,0 +1,45 @@
+@startuml C4_Components_Rates_CallCenter
+!include <C4/C4_Container>
+
+title C4 L2. Компоненты — передача ставок в кол-центры (детализация сервиса интеграции депозитов)
+
+Person(depBack, "Менеджер бэк-офиса")
+Person(ccOperator, "Оператор кол-центра банка")
+Person(pccOperator, "Оператор партнёрского кол-центра")
+
+System(abs, "АБС", "справочник ставок + API депозитов АБС")
+
+System_Boundary(dis, "Сервис интеграции депозитов") {
+  Container(syncSvc, "Синхронизация ставок", "Java Spring Boot, job", "Получение справочника ставок из АБС по API, обновление кэша при изменениях и по расписанию")
+  ContainerDb(ratesCache, "Кэш ставок (БД сервиса)", "Oracle, схема сервиса", "Актуальные публичные ставки, версия среза, время обновления")
+  Container(ratesApi, "API ставок", "Java Spring Boot, REST", "Выдача актуальных ставок системе кол-центра")
+  Container(ratesExport, "Экспорт ставок в файл", "Java Spring Boot, job", "Формирование файла со ставками (CSV) при изменении справочника и по расписанию")
+  Container(sftpClient, "SFTP-клиент", "Java, SSH/SFTP", "Выкладка файла в каталог партнёра на SFTP-сервере")
+}
+
+System(sftp, "SFTP-сервер банка", "новый; изолированный каталог партнёра, только чтение")
+System_Boundary(cc, "Система кол-центра банка") {
+  Container(ccRatesImport, "Интеграция ставок", "Java Spring Boot (доработка)", "Периодический опрос API ставок, локальный кэш-срез")
+  Container(ccUi, "UI оператора: ставки", "React (доработка)", "Актуальные ставки на экране оператора")
+}
+System_Boundary(pcc, "Система партнёрского кол-центра") {
+  Container(pccFileLoad, "Загрузка файлов со SFTP", "компонент партнёра", "Периодическая загрузка файла ставок, контроль версии и контрольной суммы")
+  Container(pccUi, "UI оператора: ставки", "компонент партнёра", "Актуальные ставки на экране оператора")
+}
+
+Rel(depBack, abs, "Ведение справочника ставок")
+Rel(syncSvc, abs, "REST: получение справочника ставок (по расписанию и по событию изменения)")
+Rel(syncSvc, ratesCache, "Обновление кэша")
+Rel(ratesApi, ratesCache, "Чтение ставок")
+Rel(ratesExport, ratesCache, "Чтение ставок и версии среза")
+Rel(ratesExport, sftpClient, "Передача файла для публикации")
+Rel(sftpClient, sftp, "SFTP: выкладка файла (публичный ключ, только запись в каталог партнёра)")
+Rel(ccRatesImport, ratesApi, "REST/TLS: получение актуальных ставок")
+Rel(ccRatesImport, ccUi, "Актуальные ставки для отображения")
+Rel(pccFileLoad, sftp, "SFTP: загрузка файла со ставками (только чтение)")
+Rel(pccFileLoad, pccUi, "Актуальные ставки для отображения")
+Rel(ccOperator, ccUi, "Консультация клиента")
+Rel(pccOperator, pccUi, "Консультация клиента")
+
+SHOW_LEGEND()
+@enduml
